@@ -1,0 +1,207 @@
+---
+title: "Lab 1: Displaying correlated data"
+subtitle: "EPIB 627, Fall 2020"
+author: "Iris Ganser"
+date: "09/09/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Considering the design of the study, how does the clustering arise?
+The clustering in the study comes from two factors:  
+1. Data were collected at many hospitals. Babies treated at the same hospital might be more similar to each other than babies treated at different hospitals.   
+2. Data were collected longitudinally, i.e. at many different timepoints on the same babies. 
+
+## 2. Are subjects within the same hospital more alike than others? 
+(a) Make a plot to visualize the hospital-level variability at time=0 and time=12. 
+```{r}
+# load data
+probit <- read.csv("probit.csv")
+probit$HOSP <- as.factor(probit$HOSP)
+probit$SUBJ <- as.factor(probit$SUBJ)
+
+# load packages
+library(ggplot2)
+library(dplyr)
+library(nlme)
+
+# hospital variability at time = 0
+ggplot(filter(probit, TIME == 0), aes(x = HOSP, y = WAZ)) +
+  geom_boxplot() +
+  labs(x = "Hospital", y = "Weight for Age Z-score (WAZ)", 
+       title = "Hospital differences in WAZ at time = 0")
+
+# hospital variability at time = 12
+ggplot(filter(probit, TIME == 12), aes(x = HOSP, y = WAZ)) +
+  geom_boxplot() +
+  labs(x = "Hospital", y = "Weight for Age Z-score (WAZ)", 
+       title = "Hospital differences in WAZ at time = 12")
+```
+
+(b) Calculate the ICC for the hospital level clustering at birth (time=0) and at 12 months
+(time=12).
+```{r}
+# model with a random intercept per hospital to account for hospital clustering and further compute ICC:
+lme0 <- lme(WAZ ~ 1, random = ~1|HOSP, data = filter(probit, TIME == 0))
+lme12 <- lme(WAZ ~ 1, random = ~1|HOSP, data = filter(probit, TIME == 12))
+
+# VarCorr function extracts the components we are interested in
+icc0 <- as.numeric(VarCorr(lme0)[1,1])/
+  (as.numeric(VarCorr(lme0)[1,1]) + as.numeric(VarCorr(lme0)[2,1]))
+icc0
+
+icc12 <- as.numeric(VarCorr(lme12)[1,1])/
+  (as.numeric(VarCorr(lme12)[1,1]) + as.numeric(VarCorr(lme12)[2,1]))
+icc12
+```
+
+Almost no hospital clustering is observable at time = 0 (ICC = 0.008). At time = 12, hospital clustering is a bit higher (ICC = 0.015).
+
+## 3. Are observations on the same baby more alike than others?
+(a) Make a plot to visualize the baby-level variability (for hospital 1 babies)
+```{r}
+ggplot(data = filter(probit, HOSP == 1), aes(x = SUBJ, y = WAZ)) +
+  geom_boxplot() +
+  labs(x = "Baby ID", y = "Weight for Age Z-score (WAZ)", 
+       title = "Boxplots per baby in hospital #1")
+```
+
+Visually, there are a lot of differences between babies. Makes sense!
+
+(b) Calculate the ICC for the baby-level clustering for babies from hospital 1.
+```{r}
+lme_baby <- lme(WAZ ~ 1, random = ~1|SUBJ, 
+                data = filter(probit, HOSP == 1))
+icc_baby <- as.numeric(VarCorr(lme_baby)[1,1])/
+  (as.numeric(VarCorr(lme_baby)[1,1]) + as.numeric(VarCorr(lme_baby)[2,1]))
+icc_baby
+```
+There is a high intra-class correlation (0.62), meaning that 62% of the variability
+between observations is due to the babies. 
+
+## 4. Which is bigger, the ICC for babies or for hospitals? What happens to the hospital ICC
+between time=0 and time=12? How do the boxplots for babies compare to the boxplot for
+hospitals? Interpret the ICCs.
+
+The ICC for babies is much higher, meaning there are more individual differences. ICC for hospitals between time=0 and time=12 increases, meaning differences between hospitals increase over the first year of life of the babies. Compared to the boxplots for hospitals, the boxplots for babies show much more heterogeneity. 0.8% of the variability between observations is due to hospitals whereas 62% of the variability between observations is due to the babies. 
+
+## 5. Explore the baby-level variability using a trajectory plot, a cross correlation plot, variogram, and correlation matrix for one hospital!
+```{r}
+# filter data for hospital 1
+hosp1 <- filter(probit, HOSP ==1)
+hosp1$SUBJ <- factor(hosp1$SUBJ)
+baby <- as.numeric(sample(levels(hosp1$SUBJ), size = 25, replace = FALSE))
+hosp1 <- filter(hosp1, SUBJ %in% baby)
+
+# trajectory plot for 25 random babies
+ggplot(data = hosp1, aes(x = TIME, y = WAZ, group = SUBJ)) +
+  geom_line() +
+  scale_x_continuous(breaks = seq(0, 12, 1)) +
+  labs(title = "Trajectories for 25 random babies in hospital #1")
+
+# cross correlation plot
+# regress outcome on predictors and extract residuals
+hosp1 <- filter(probit, HOSP ==1)
+WAZlm <- lm(WAZ ~ WAZ0 + TIME, 
+            data = hosp1)
+resWAZ <- data.frame(SUBJ = hosp1$SUBJ, res = residuals(WAZlm))
+resWAZ <- resWAZ %>% group_by(SUBJ) %>% mutate(observation = row_number())
+
+# create wide dataset
+library(tidyr)
+resWAZ_wide <- pivot_wider(resWAZ, names_from = observation, values_from = res)
+
+# cross correlation plot
+chart.Correlation(resWAZ_wide[, 2:8], histogram=TRUE, na.action = na.omit)
+
+
+# variogram
+# replace subject numbers with continuous numbers from 1 to 94
+resWAZ_wide$id <- 1:94
+
+hosp1 <- left_join(hosp1, resWAZ_wide, by = "SUBJ") %>% 
+  select(-c(36:42))
+# fit linear model with only time as predictor
+WAZlmT <- lm(WAZ ~ TIME, data = hosp1)
+#calculate variance values
+myval <- outer(resid(WAZlmT), resid(WAZlmT), function(x, y) ((x - y)^2)/2)
+
+# need the number of observations per subject as we will replace diagonal values by NA in each submatrix from an individual
+obs.byid<-table(hosp1$id)
+
+i<-1
+j<-1
+
+# change diagonal values (the zeros) by NA in submatrices, as these were not calculated among two different individuals
+while(i <= dim(myval)[1]){
+  myval[i:(i+(obs.byid[j]-1)),i:(i+(obs.byid[j]-1))]<-NA
+  i<-i+obs.byid[j]
+  j<-j+1
+}
+
+#total variation
+process.var <- mean(myval, na.rm=TRUE)
+
+# linear model with explanatory variable
+fm3 <- gls(WAZ ~ TIME, data=hosp1)
+
+# run the variogram function, the form tells R about how the data are clustered
+Var1<-Variogram(fm3, form = ~ TIME |id, collapse="none", resType="response")
+
+# now a scatter plot
+plot(Var1[,2], Var1[,1],ylim=c(0,2*process.var),xlab="Time Lag",ylab="Variogram")
+
+# plsmo function plots smoothed estimates
+plsmo(Var1[,2], Var1[,1],add=TRUE,lty=2,"raw",col="red")
+
+# add a horizontal line for the process variance
+abline(h=process.var)
+
+# or if you prefer, a loess curve
+Var2<-Var1[order(Var1[,2],Var1[,1]),]
+lines(wtd.loess.noiter(Var2[,2], Var2[,1]),col="blue",lwd=2)
+title(main="variogram -- horizontal line=process variance", sub="red dashed line= unsmoothed variogram, blue line =smoothed variogram")
+
+## now include WAZ0 in model
+WAZlmT <- lm(WAZ ~ TIME + WAZ0, data = hosp1)
+#calculate variance values
+myval <- outer(resid(WAZlmT), resid(WAZlmT), function(x, y) ((x - y)^2)/2)
+
+obs.byid<-table(hosp1$id)
+
+i<-1
+j<-1
+
+# change diagonal values (the zeros) by NA in submatrices, as these were not calculated among two different individuals
+while(i <= dim(myval)[1]){
+  myval[i:(i+(obs.byid[j]-1)),i:(i+(obs.byid[j]-1))]<-NA
+  i<-i+obs.byid[j]
+  j<-j+1
+}
+
+#total variation
+process.var <- mean(myval, na.rm=TRUE)
+
+# linear model with explanatory variable
+fm3 <- gls(WAZ ~ TIME + WAZ0, data=hosp1)
+
+# run the variogram function, the form tells R about how the data are clustered
+Var1<-Variogram(fm3, form = ~ TIME |id, collapse="none", resType="response")
+
+# now a scatter plot
+plot(Var1[,2], Var1[,1],ylim=c(0,5*process.var),xlab="Time Lag",ylab="Variogram")
+
+# plsmo function plots smoothed estimates
+plsmo(Var1[,2], Var1[,1],add=TRUE,lty=2,"raw",col="red")
+
+# add a horizontal line for the process variance
+abline(h=process.var)
+
+Var2<-Var1[order(Var1[,2],Var1[,1]),]
+lines(wtd.loess.noiter(Var2[,2], Var2[,1]),col="blue",lwd=2)
+title(main="variogram -- horizontal line=process variance", sub="red dashed line= unsmoothed variogram, blue line =smoothed variogram")
+```
+
