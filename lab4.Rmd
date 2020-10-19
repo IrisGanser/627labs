@@ -1,0 +1,98 @@
+---
+title: "lab4"
+subtitle: "EPIB 627, Fall 2020"
+author: "Iris Ganser"
+date: "01/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Create variables for the following representations of time:  
+(a) CD4 declines linearly with time   
+(b) CD4 varies linearly, drops at seroconversion then declines linearly (i.e. there is a " jump" at seroconversion) 
+i. Same slope before and after (CD4 declines)  
+ii. Different slopes (increases first, and then decreases)  
+(c) CD4 declines linearly until seroconversion, then declines more steeply after (i.e. a "bend"
+at seroconversion, but no discontinuity)  
+```{r}
+### test for variable coding
+time <- seq(-5, 5, 0.1)
+
+ya <- 5 - 4*time
+ybi <- 5 - 4*time - 3*I(time >= 0)
+ybii <- 5 + 1.5*time - 2*time*I(time >= 0) - 3*I(time >= 0)
+yc <- 5 - 4*time - 3*time*I(time >= 0)
+
+plot(time, ya, type = "l", lwd = 3)
+lines(time, ybi, col = 2, lwd = 3)
+lines(time, ybii, col = 3, lwd = 3)
+lines(time, yc, col = 4, lwd = 3)
+```
+
+
+```{r}
+cd4 <- read.csv("cd4.csv")
+cd4$POS <- ifelse(cd4$TSS >= 0, 1, 0)
+cd4$afterTSS <- ifelse(cd4$TSS >= 0, cd4$TSS, 0)
+```
+
+## 2.  Fit the various representations of time and decide which fits best, while accounting for correlation by including random intercept and serial correlation in your model.  
+```{r}
+library(nlme)
+library(dplyr)
+
+model_a <- lme(CD4 ~ TSS, random = ~1|ID, data = cd4, 
+               correlation = corCAR1(form = ~TSS|ID))
+model_b1 <- lme(CD4 ~ TSS + POS, random = ~1|ID, data = cd4, 
+               correlation = corCAR1(form = ~TSS|ID))
+model_b2 <- lme(CD4 ~ TSS + POS + TSS*POS, random = ~1|ID, data = cd4, 
+               correlation = corCAR1(form = ~TSS|ID))
+model_c <- lme(CD4 ~ TSS + afterTSS, random = ~1|ID, data = cd4, 
+               correlation = corCAR1(form = ~TSS|ID))
+
+summary(model_a)
+summary(model_b1)
+summary(model_b2)
+summary(model_c)
+AIC(model_a)
+AIC(model_b1)
+AIC(model_b2)
+AIC(model_c)
+```
+
+## 3. With your best fitting model, does the effect of time vary across subject? That is, is there a need for a random slope? 
+```{r}
+model_3 <- lme(CD4 ~ TSS + POS + TSS*POS, random = ~1 + TSS|ID, data = cd4, 
+               correlation = corCAR1(form = ~TSS|ID))
+summary(model_3)
+```
+
+## 4. Is the serial correlation still needed if you have random slopes? Compare the regression
+coefficients for time, and the AIC from the model with random intercepts and slopes to that
+with random intercepts, slopes, and serial correlation.  
+```{r}
+model_4 <- lme(CD4 ~ TSS + POS + TSS*POS, random = ~1 + TSS|ID, data = cd4)
+summary(model_4)
+AIC(model_3); AIC(model_4)
+```
+
+## 5. After restricting to the smokers data, is there evidence that smokers have a different change over time?
+```{r}
+# with random slope 
+model_5 <- lme(CD4 ~ TSS + POS + TSS*POS, random = ~1 + TSS|ID, 
+               data = filter(cd4, PACKS >0), 
+               correlation = corCAR1(form = ~TSS|ID))
+summary(model_5)
+
+# without random slope
+model_6 <- lme(CD4 ~ TSS + POS + TSS*POS, random = ~1 |ID, 
+               data = filter(cd4, PACKS >0), 
+               correlation = corCAR1(form = ~TSS|ID))
+summary(model_6)
+
+AIC(model_5); AIC(model_6)
+```
+

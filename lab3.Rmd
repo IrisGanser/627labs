@@ -1,0 +1,41 @@
+---
+title: "Lab 3: Restricted maximum likelihood versus Maximum Likelihood estimation"
+subtitle: "EPIB 627, Fall 2020"
+author: "Iris Ganser"
+date: "24/09/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Fit a random effects model with no covariates using REML
+```{r}
+library(nlme)
+exam <- read.csv("~/PhD/Courses/EPIB627/Labs/627labs/exam.csv")
+
+m1 <- lme(normexam ~ 1, random = ~1|school, data = exam, method = "REML")
+m2 <- lme(normexam ~ 1, random = ~1|school, data = exam, method = "ML")
+
+summary(m1)
+summary(m2)
+
+VarCorr(m1)
+VarCorr(m2)
+
+str(exam)
+
+m3 <- lme(normexam ~ standLRT + schgend + vr + intake + sex, random = ~1|school,
+          data = exam, method = "REML")
+m4 <- lme(normexam ~ standLRT + schgend + vr + intake + sex, random = ~1|school,
+          data = exam, method = "ML")
+
+summary(m3)
+VarCorr(m3)
+VarCorr(m4)
+
+summary(random.effects(m3))
+summary(random.effects(m4))
+```
+

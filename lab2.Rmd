@@ -1,0 +1,72 @@
+---
+title: 'Lab 2: Mixed models for continuous outcomes'
+subtitle: "EPIB 627, Fall 2020"
+author: "Iris Ganser"
+date: "17/09/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Fit the 4 models performed in class, i.e. i) a simple linear regression model, ii) a random
+intercept model, iii) a random slope model with independent random coefficients, iv) a random
+slope model with correlated random coefficients.
+```{r}
+library(lme4)
+exam <- read.csv("~/PhD/Courses/EPIB627/Labs/627labs/exam.csv")
+str(exam)
+
+# simple linear regression model
+lm <- lm(normexam ~ standLRT, data = exam)
+summary(lm)
+
+# random intercept model
+ri <- lmer(normexam ~ standLRT + (1|school), data = exam)
+summary(ri)
+
+# random slope model
+rs <- lmer(normexam ~ standLRT + (1|school) + (-1 + standLRT|school), data = exam)
+summary(rs)
+
+# random slope model with correlated random coefficients
+rs_cor <- lmer(normexam ~ standLRT + (1 + standLRT|school), data = exam)
+summary(rs_cor)
+```
+
+
+## Compare the results for the four models with respect to: i) fixed effect estimates, ii) fixed effect standard errors, iii) AIC, iv) Correlation between 2 observations, v) Number of parameters to be estimated
+```{r}
+# fixed effect estimates
+coef(lm)
+fixef(ri)
+fixef(rs)
+fixef(rs_cor)
+
+# fixed effects standard errors
+
+# AIC
+AIC(lm)
+AIC(ri)
+AIC(rs)
+AIC(rs_cor)
+
+# correlation between two observations
+Vcov <- vcov(ri, useScale = FALSE)
+
+# number of parameters to be estimated
+```
+
+## Try to reproduce the figures from the lecture: i) plots of random effects, ii) estimated regression lines, iii) graphs to check the model's assumptions
+```{r}
+# plots of random effects
+coef_ri <- coef(ri)$school
+plot(x = 0, y = 0)
+for(i in 1:65){
+  abline(coef_ri[i, 1], coef_ri[i, 2], col = "darkblue")
+}
+abline(h = 0,  lty = 2)
+abline(v = 0, lty = 2)
+```
+

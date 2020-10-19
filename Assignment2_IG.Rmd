@@ -1,0 +1,237 @@
+---
+title: "Assignment 2"
+subtitle: "EPIB 627, Fall 2020"
+author: "Iris Ganser"
+date: "`r Sys.Date()`"
+output: pdf_document
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,          # don't show code
+  warning = FALSE,       # don't show warnings
+  message = FALSE,       # don't show messages (less serious warnings)
+  cache = FALSE,         # set to TRUE to save results from last compilation
+  fig.align = "center",   # center figures
+  fig.asp = 0.5,          # fig.aspect ratio
+  fig.width = 8        # fig width
+)
+```
+
+# 1. Exploratory and univariate analyses on the 'hospitals' dataset
+```{r}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(PerformanceAnalytics)
+library(nlme)
+library(lme4)
+library(gridExtra)
+library(grid)
+library(kableExtra)
+
+hospitals <- read.csv("~/PhD/Courses/EPIB627/Assignments/hospitals.csv")
+factor_cols <- c(2, 5)
+hospitals[factor_cols] <- lapply(hospitals[factor_cols], as.factor)
+```
+The table below shows a summary of the variables in the hospital dataset per hospital. There is not much difference between the summary values for separate hospitals apart from hospital 40, which differs from other hospitals in its distribution of material and social deprivation quintiles of patients. The same observations can be made in the violin plots per hospital: there is not much evidence of clustering effect per hospital. The only exception is hospital 40, where patients are more materially and socially deprived than patients at other hospitals. I chose to visualize the distributions in violin plots rather than boxplots because the distribution over the quintiles is more clearly visible this way.
+
+The histograms of physician visits by gender and deprivation quintiles show that on average more women visit physicians than men, that patients in the lowest deprivation quintile (i.e. richer people) have a higher number of physician visits than poor people, and that patients in the two highest social deprivation quintiles (i.e. socially more deprived people) visit physicians more often than patients in the lower deprivation quintiles. However, this does not mean that these variables are associated because the lowest material deprivation quintile and the higher social deprivation quintiles just consist of a higher number of patients. When we look at the graphical association between both deprivation quintiles and number of physician visits, we see only a very low negative correlation between these variables. From the correlation plot of all variables, we can see that there is not much correlation between the social and material deprivation quintiles ($\rho = 0.08$). Not surprisingly, both comorbidity scores are correlated with each other ($\rho = 0.28$) and with the number of physician visits ($\rho_{Dhooremq} = 0.22$ and $\rho_{CDS} = 0.16$). Age is weakly correlated with the CDS score $\rho = 0.12$, but not with the Dhooremq score $\rho = 0.014$. All other variables are not or only very weakly correlated. 
+```{r}
+hosp_summary <- hospitals %>% group_by(hosp_index) %>% summarize(
+  median_age = median(Age), n_patient = n_distinct(nam), 
+  mean_Dhooremq = mean(Dhooremq), mean_CDS = mean(CDS),
+  mean_mat = mean(quint_mat), mean_soc = mean(quint_soc), 
+  mean_nb_phy = mean(nb_phy))
+
+kable(hosp_summary, digits = 2, format = "latex",
+      col.names = c("hosp.", "median age", "n patients", "mean Dhooremq", 
+                    "mean CDS",  "mean mat. qu.", "mean soc. qu.", 
+                    "mean n phy.")) %>%
+  kable_styling(font_size = 8)
+  
+
+p1 <- ggplot(hospitals, aes(x = hosp_index, y = nb_phy)) +
+  geom_violin(fill = "lightblue") +
+  labs(x = "", y = "number of physician visits", 
+       title = "Number of physician visits per hospital")
+p2 <- ggplot(hospitals, aes(x = hosp_index, y = quint_soc)) +
+  geom_violin(fill = "lightblue") +
+  labs(x = "", y = "social deprivation quintile", 
+       title = "Social deprivation quintile per hospital")
+p3 <- ggplot(hospitals, aes(x = hosp_index, y = Dhooremq)) +
+  geom_violin(fill = "lightblue") +
+  labs(x = "hospital index", y = "Dhooremq", 
+       title = "Dhooremq per hospital")
+p4 <- ggplot(hospitals, aes(x = hosp_index, y = quint_mat)) +
+  geom_violin(fill = "lightblue") +
+  labs(x = "hospital index", y = "material deprivation quintile", 
+       title = "Material deprivation quintile per hospital")
+grid.arrange(p1, p2, p3, p4, ncol = 2, 
+             top = textGrob("Variables clustered per hospital", 
+                            gp=gpar(fontsize=14, fontface = "bold")))
+
+ggplot(hospitals, aes(x = nb_phy, fill = sex)) +
+  geom_histogram(bins = 20, col = "black") + 
+  facet_wrap(facets = hospitals$quint_mat) +
+  labs(x = "number of physician visits", 
+       title = "Number of physician visits by gender and material deprivation quintile") +
+  scale_fill_discrete(labels = c("female", "male"))
+ggplot(hospitals, aes(x = nb_phy, fill = sex)) +
+  geom_histogram(bins = 20, col = "black") + 
+  facet_wrap(facets = hospitals$quint_soc) +
+  labs(x = "number of physician visits", 
+       title = "Number of physician visits by gender and social deprivation quintile") +
+  scale_fill_discrete(labels = c("female", "male"))
+
+p1 <- ggplot(hospitals, aes(x = quint_mat, y = nb_phy)) +
+  geom_jitter(alpha = 0.5) +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(x = "material deprivation quintile", y = "number of physician visits",
+       title = "Association of quint_mat with nb_phy", 
+       caption = "The blue line is the linear regression line between both variables")
+p2 <- ggplot(hospitals, aes(x = quint_soc, y = nb_phy)) +
+  geom_jitter(alpha = 0.5) +
+  geom_smooth(method = "lm", col = "red") +
+  labs(x = "social deprivation quintile", y = "number of physician visits",
+       title = "Association of quint_soc with nb_phy", 
+       caption = "The red line is the linear regression line between both variables")
+grid.arrange(p1, p2, ncol = 2)
+
+
+count_qm <- hospitals %>% group_by(quint_mat) %>% summarize(n_mat = n())
+count_qs <- hospitals %>% group_by(quint_soc) %>% summarize(n_soc = n())
+table.quint <- data.frame(quintile = 1:5, n_mat = count_qm[2],
+                          n_soc = count_qs[2])
+kable(table.quint, digits = 2, format = "latex") %>%
+  kable_styling(font_size = 8)
+```
+
+```{r fig.asp = 0.7}
+chart.Correlation(hospitals[, c(3, 4, 6:9)], histogram = TRUE, 
+                  main = "Correlation plot of all variables in the hospital dataset")
+```
+
+# 2. Fit the following models with nb_phy as the outcome and quint mat as predictor (independent variables):  
+a) A simple linear regression model ignoring hosp index.  
+
+```{r  fig.asp = 0.7}
+# simple linear regression model ignoring hosp index
+m1 <- lm(nb_phy ~ quint_mat, data = hospitals)
+summary(m1)
+# model checking
+par(mfrow = c(2, 2))
+plot(m1)
+AICm1 <- AIC(m1)
+```
+In the simple linear regression model, the number of physician visits decreases by 0.09 visits on average per increase in material deprivation quintile (when going from rich to poor). Thus, the effect of material deprivation on the number of physician visits is very small, albeit statistically significant (p = 0.017). The model's AIC is 27657.6. However, the model should be interpreted with care because it does not meet the Normality assumption of normally distributed errors (Normal Q-Q plot).
+ 
+b) A linear random effect model, with hosp index as the random effect. Calculate the ICC
+using the estimated parameters of this model. Comment.
+```{r}
+#  A linear random effect model, with hosp index as the random effect
+m2 <- lme(nb_phy ~ quint_mat, random = ~1|hosp_index, data = hospitals)
+summary(m2)
+# ICC is random intercept variance over total variance
+ICC_m2 <- (0.2624662^2)/(0.2624662^2 + 3.834689^2) 
+```
+When adding a random intercept with hospital as the random effect to the model, the model's AIC increases slightly to 27658.47. There is not much evidence for a clustering effect, as the variance of the random effect is very small compared to the residual variance ($0.262^2 = 0.069$ vs. $3.835^2 = 14.707$). This is also reflected in the ICC, which is the proportion of the variance explained by the grouping structure in the population. The ICC is $\frac{0.262^2}{0.262^2 + 3.835^2} = 0.005$, which means that the random effect only explains 0.5% of the total variance. Thus, adding a random intercept to account for clustering per hospital has almost no effect.
+
+c) A linear random coefficient model with hosp index as random effect and with a random
+coefficient for quint_mat.
+```{r}
+# A linear random coefficient model with random intercept and slope, no correlation
+m3 <- lmer(nb_phy ~ quint_mat + (1|hosp_index) + (-1 + quint_mat|hosp_index),
+           data = hospitals)
+summary(m3)
+
+ggplot(hospitals, aes(x = quint_mat, y = nb_phy)) +
+  geom_jitter(alpha = 0.5) +
+  geom_abline(intercept = coefficients(m3)[[1]][, 1], slope = coefficients(m3)[[1]][, 2], 
+              col = "blue", size = 0.5)  +
+  labs(x = "material deprivation quintile", y = "number of physician visits",
+       title = "Association of mat. deprivation quintile with number of physician visits", 
+       caption = "random intercept and random slope for each hospital")
+```
+Adding a random slope to the model does not have any benefit. The random intercept variance is still really small (0.069), while the estimate of the random slope variance is 0, which means that the model estimates the same slope for every hospital. This can also be seen in the plot below of the random intercept and slope for each hospital. So there is no indication to fit a random slope for the material deprivation quintile. When checking the model assumptions, it is clear that the random errors and the random intercepts are not normally distributed. 
+
+```{r}
+## model checking
+# histogram of random intercepts and epsilons
+par(mfrow = c(1, 2))
+hist(coefficients(m3)[[1]][, 1], main = "histogram of random intercepts", breaks = 10, 
+     xlab = "random intercept values")
+hist(residuals(m3), xlab = "epsilon", ylab = "", 
+     main = "Histogram of the epsilons")
+
+# plots of epsilon against predictor and per hospital
+# p5 <- ggplot(hospitals, aes(x = quint_mat, y = residuals(m3))) + 
+#   geom_jitter() +
+#   labs(x = "material deprivation quintile", y = "Epsilon")
+# p6 <- ggplot(hospitals, aes(x = hosp_index, y = residuals(m3))) + 
+#   geom_jitter() +
+#   labs(x = "hospital", y = "Epsilon")
+# grid.arrange(p5, p6, ncol = 2, 
+#              top = textGrob("Epsilon plots", 
+#                             gp=gpar(fontsize=14, fontface = "bold")))
+```
+
+
+# 3. Modeling with quint_soc as predictor, and comparison of the models. Select the "best" model.
+```{r}
+# simple linear regression model ignoring hosp index
+m4 <- lm(nb_phy ~ quint_soc, data = hospitals)
+summary(m4)
+AICm4 <- AIC(m4)
+
+#  A linear random effect model, with hosp index as the random effect
+m5 <- lme(nb_phy ~ quint_soc, random = ~1|hosp_index, data = hospitals)
+summary(m5)
+# ICC is random intercept variance over total variance
+ICC_m5 <- (0.2610381^2)/(0.2610381^2 + 3.835475^2) 
+
+
+# A linear random coefficient model with random intercept and slope
+m6 <- lmer(nb_phy ~ quint_soc + (1|hosp_index) + (-1 + quint_soc|hosp_index),
+           data = hospitals)
+```
+In the simple linear regression model, the number of physician visits decreases by 0.08 visits on average per increase in social deprivation quintile (when going from rich to poor). Thus, the effect of social deprivation on the number of physician visits is very small, albeit statistically significant (p = 0.046).
+
+There is no indication from the AIC or the model parameters that a model with the social deprivation quintile as a predictor for the number of physician visits is better than the model with material deprivation quintile as a predictor. The AIC of the simple model with only quint_mat as predictor is 27657.6, compared to an AIC with quint_soc of 27659.32. Adding a random intercept does not improve model fit but increases the AIC and explains very little of the overall model variance ($ICC = \frac{0.261^2}{0.261^2 + 3.835^2} = 0.005$). Adding a random slope to the model is not indicated, since the random slope variance is 0, which means that the slope is the same for all hospitals. So overall, the simple linear model with only quint_mat as a predictor has the lowest AIC. Since quint_soc had a significant p-value in the simple linear model, I nevertheless decided to try fitting a model with quint_mat and quint_soc as predictors and also try a model with a random intercept. 
+
+```{r}
+# model with both indicators (and random intercept)
+m7 <- lm(nb_phy ~ quint_mat + quint_soc, data = hospitals)
+summary(m7)
+
+m8 <- lme(nb_phy ~ quint_mat + quint_soc, random = ~1|hosp_index, data = hospitals)
+summary(m8)
+
+anova(m7, m1)
+```
+There is no indication for a random intercept model with both predictors, as the AIC is increased and the random intercept variance is very low. Furthermore, the model with only quint_mat has a better model fit than the model with quint_mat and quint_soc, according to an ANOVA. However, the simple linear model with both predictors has a lower AIC than the simple linear model with only quint_mat as predictor. Therefore, I decided to keep both quint_mat and quint_soc in the model. Both quint-mat and quint-soc minimally decrease the number of physician visits when going one step up from a lower quintile to a higher quintile (by 0.08 and 0.07, respectively). An additional reason to keep them in the model is that they could act as confounders for each other (despite their low correlation coefficient), so if I wanted to identify the causal effect of one of them on the number of physician visits, I should control for the other one in the model. 
+
+
+# 4. Develop a `final' model including all relevant covariates.
+```{r}
+m9 <- lm(nb_phy ~ quint_mat + quint_soc + Age + sex + Dhooremq + CDS, data = hospitals)
+summary(m9)
+m10 <- lm(nb_phy ~ quint_mat + quint_soc + Age + Dhooremq + CDS, data = hospitals)
+anova(m10, m9)
+m11 <- lm(nb_phy ~ quint_mat + quint_soc + Dhooremq + CDS, data = hospitals)
+m12 <- lm(nb_phy ~ quint_mat + quint_soc + Age + CDS, data = hospitals)
+m13 <- lm(nb_phy ~ quint_mat + quint_soc + Age + Dhooremq, data = hospitals)
+anova(m11, m10)
+anova(m12, m10)
+anova(m13, m10)
+summary(m10)
+```
+The final model should include both quint_mat and quint_soc as predictors and should not include random effects for hospitals. I eliminated the "sex" variable from the final model but kept all the other variables. Sex had the highest p-value of all variables and an ANOVA comparison between the models with and without sex indicated that inclusion of the sex variable into the model did not significantly improve model fit. All the other variables (except quint_soc, but I discussed why it was included in the model in the paragraph above) are highly significant. ANOVAs testing the remaining covariates (Dhooremq, CDS and age) indicated that keeping these variables in the model significantly improve model fit. Therefore, the final model includes quint_mat, quint_soc, age, Dhooremq, and CDS as predictors. In the final model, being in a higher material or social deprivation quintile reduces the number of physician  visits (adjusted for all other covariates). For example, while adjusting for all other covariates, quint_mat decreases the number of physician visits by 0.095 when going one quintile up (i.e. from rich to poor). Higher age and higher comorbidity scores increase the number of physician visits (adjusted for all other covariates).  
+
+
+# Code {-}
+```{r all-code, ref.label=knitr::all_labels(), echo = TRUE, eval = FALSE}
+
+```
+

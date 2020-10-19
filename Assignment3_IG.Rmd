@@ -1,0 +1,126 @@
+---
+title: "Assignment 2"
+subtitle: "EPIB 627, Fall 2020"
+author: "Iris Ganser"
+date: "`r Sys.Date()`"
+output: pdf_document
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,          # don't show code
+  warning = FALSE,       # don't show warnings
+  message = FALSE,       # don't show messages (less serious warnings)
+  cache = FALSE,         # set to TRUE to save results from last compilation
+  fig.align = "center",   # center figures
+  fig.asp = 0.5,          # fig.aspect ratio
+  fig.width = 8        # fig width
+)
+```
+
+# 1. Consider votecons as the outcome, with Area (constituency) as a grouping variable. Which of the following would be reasonable covariance structures, and why?  
+- Independence could be a reasonable covariance structure if we assume that constituency has no impact, meaning that there is no clustering by area of residence. The correlation structure looks like:  
+$Corr(Y) =$ 
+$\begin{bmatrix}
+1 & 0 & 0\\
+0 & 1 & 0\\
+0 & 0 & 1
+\end{bmatrix}$
+- Autoregressive correlation makes no sense because it is assumed in longitudinal data. However, in this dataset, the observations are not ordered in time, but clustered by region. The correlation structure of an autoregressive correlation would look like:  
+$Corr(Y) =$ 
+$\begin{bmatrix}
+1 & \rho & \rho^2 & \rho^3\\
+\rho & 1 & \rho & \rho^2\\
+\rho^2 & \rho & 1 & \rho \\
+\rho^3 & \rho^2 & \rho & 1
+\end{bmatrix}$
+- Exchangeable (Variance Components, Compound Symmetry): This correlation structure assumes that constituency has an impact on voter behavior, and that voters living in the same constituency have the same voting behavior. Moreover, it assumes that the correlation of voters is the same for each constituency. These assumptions seem very reasonable for this kind of dataset. The correlation structure looks like this:   
+$Corr(Y) =$ 
+$\begin{bmatrix}
+1 & \rho & \rho & \rho\\
+\rho & 1 & \rho & \rho\\
+\rho & \rho & 1 & \rho \\
+\rho & \rho & \rho & 1
+\end{bmatrix}$
+- A banded correlation structure is used for observations over time on the same subjects, with the correlation not declining uniformly over time. In this dataset, a banded correlation is not reasonable because it assumes that observations are ordered in time. The correlation structure looks like this:    
+$Corr(Y) =$ 
+$\begin{bmatrix}
+1 & \rho_1 & \rho_2 & \rho_3\\
+\rho_1 & 1 & \rho_1 & \rho_2\\
+\rho_2 & \rho_1 & 1 & \rho _1\\
+\rho_3 & \rho_2 & \rho_1 & 1
+\end{bmatrix}$
+- An unstructured correlation structure assumes that observations have different correlations with each other in each cluster. This correlation structure seems to be reasonable for this dataset, but is hard to fit. The correlation structure looks like this:  
+$Corr(Y) =$ 
+$\begin{bmatrix}
+1 & \rho_{12} & \rho_{13} & \rho_{14}\\
+\rho_{12} & 1 & \rho_{23} & \rho_{24}\\
+\rho_{13} & \rho_{23} & 1 & \rho_{34} \\
+\rho_{14} & \rho_{24} & \rho_{34} & 1
+\end{bmatrix}$
+
+
+# 2. Analyze the data using a random effect model assuming any two of the four structures men-
+tioned above. Justify your choice of the two structures. Compare the models and comment.
+```{r}
+# load packages and data
+library(lme4)
+library(ggplot2)
+library(dplyr)
+library(nlme)
+library(geepack)
+library(MASS)
+library(kableExtra)
+data <- read.csv("election.csv")
+data$area <- as.factor(data$area)
+# table.data <- data %>% group_by(area) %>% 
+#   summarize(n = n(), mean.def = mean(defence), mean.unemp = mean(unemp), 
+#             mean.tax = mean(taxes), mean.priv = mean(privat), 
+#             perc.con = sum(votecons)/n()*100)
+
+cor(data[3:6])
+
+# random effects model
+m1 <- glmmPQL(votecons ~ defence + unemp + taxes + privat, random = ~1|area, 
+              family = "binomial", data = data, correlation = corCompSymm(form=~1|area))
+summary(m1)
+OR_m1 <- exp(m1$coefficients$fixed[2:5])
+```
+I chose to analyze the dataset with a random intercepts model with exchangeable and independent correlation structures. Independent correlation structures seemed to be justifiable because people might not cluster according to the place where they live at all. An exchangeable correlation structure seemed reasonable to me because people who live in the same area might have the same political opinion and influence each other in their political opinions. I excluded banded and autoregressive correlations because they are only useful for time series.  
+
+The predictive variables "attitude towards nuclear weapons", "attitude towards unemployment", "attitude towards taxes", and "attitude towards privatization of Crown corporations" are all moderately correlated with each other ($\rho$ between 0.2 and 0.35).
+In the random intercept model assuming exchangeable correlation across clusters, $\rho$ was estimated to be 0.03, so almost negligible. Moreover, the variance of the random intercept is very close to 0, indicating that there is no effect of clustering. The odds ratios the association between voting conservative and attitude towards nuclear weapons, unemployment, taxes, and privatization are 1.09, 1.07, 1.05, and 1.15, respectively. All of these ORs are statistically significant. 
+
+```{r}
+m2 <- glmmPQL(votecons ~ defence + unemp + taxes + privat, random = ~1|area, 
+              family = "binomial", data = data, correlation = NULL)
+summary(m2)
+OR_m2 <- exp(m2$coefficients$fixed[2:5])
+```
+Because there was not much evidence of clustering by area, I fit a model assuming independence of observations. Since the correlation coefficient in the model with exchangeable correlation was so small, the results of both models are very similar. However, since the correlation was set to 0, the variance of the random intercept is larger in model 2. 
+
+
+# 3. Analyze the data using a GEE assuming one of the four structures mentioned above. Justify
+your choice of the correlation structure. Compare the results to (2) and comment.
+```{r}
+# GEE 
+m1_gee <- geeglm(votecons ~ defence + unemp + taxes + privat, id = area,
+                 data = data, corstr = "exchangeable", family = "binomial")
+summary(m1_gee)
+OR_m1_gee <- exp(m1_gee$coefficients[2:5])
+
+m2_gee <- geeglm(votecons ~ defence + unemp + taxes + privat, id = area, 
+                 data = data, corstr = "independence", family = "binomial")
+summary(m2_gee)
+OR_m2_gee <- exp(m2_gee$coefficients[2:5])
+```
+I chose the same correlation structures as above (exchangeable and independent). The empirical standard errors of both models are very similar to each other, which is not surprising because they are estimated from the actual data, which makes GEE robust to misspecification of the correlation structure. The correlation $\rho$ of observations within clusters of the exchangeable model is estimated as 0.03, just as in the random effects model. 
+GEE estimates the same ORs as the random effect models above, regardless of correlation structure provided. However, the interpretation of the odds ratios differs according to the models fit: the object of inference of GEE is not the individual cluster, but the population, so the ORs apply to the total population of voters, not to individual areas. 
+
+
+
+# Code {-}
+```{r all-code, ref.label=knitr::all_labels(), echo = TRUE, eval = FALSE}
+
+```
