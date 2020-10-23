@@ -61,8 +61,7 @@ $\begin{bmatrix}
 \end{bmatrix}$
 
 
-# 2. Analyze the data using a random effect model assuming any two of the four structures men-
-tioned above. Justify your choice of the two structures. Compare the models and comment.
+# 2. Analyze the data using a random effect model assuming any two of the four structures mentioned above.
 ```{r}
 # load packages and data
 library(lme4)
@@ -74,11 +73,6 @@ library(MASS)
 library(kableExtra)
 data <- read.csv("election.csv")
 data$area <- as.factor(data$area)
-# table.data <- data %>% group_by(area) %>% 
-#   summarize(n = n(), mean.def = mean(defence), mean.unemp = mean(unemp), 
-#             mean.tax = mean(taxes), mean.priv = mean(privat), 
-#             perc.con = sum(votecons)/n()*100)
-
 cor(data[3:6])
 
 # random effects model
@@ -98,11 +92,10 @@ m2 <- glmmPQL(votecons ~ defence + unemp + taxes + privat, random = ~1|area,
 summary(m2)
 OR_m2 <- exp(m2$coefficients$fixed[2:5])
 ```
-Because there was not much evidence of clustering by area, I fit a model assuming independence of observations. Since the correlation coefficient in the model with exchangeable correlation was so small, the results of both models are very similar. However, since the correlation was set to 0, the variance of the random intercept is larger in model 2. 
+Because there was not much evidence of clustering by area, I fit a model assuming independence of observations. Since the correlation coefficient in the model with exchangeable correlation was so small, the results of both models are very similar. However, since the correlation was set to 0, the variance of the random intercept is larger in model 2 (0.11 vs. $1.01 \times 10^{-7}$). The variance of the random intercept in the model is still small compared to the residual variance, indicating that there is not much of a clustering effect. 
 
 
-# 3. Analyze the data using a GEE assuming one of the four structures mentioned above. Justify
-your choice of the correlation structure. Compare the results to (2) and comment.
+# 3. Analyze the data using a GEE assuming one of the four structures mentioned above. 
 ```{r}
 # GEE 
 m1_gee <- geeglm(votecons ~ defence + unemp + taxes + privat, id = area,
@@ -115,7 +108,7 @@ m2_gee <- geeglm(votecons ~ defence + unemp + taxes + privat, id = area,
 summary(m2_gee)
 OR_m2_gee <- exp(m2_gee$coefficients[2:5])
 ```
-I chose the same correlation structures as above (exchangeable and independent). The empirical standard errors of both models are very similar to each other, which is not surprising because they are estimated from the actual data, which makes GEE robust to misspecification of the correlation structure. The correlation $\rho$ of observations within clusters of the exchangeable model is estimated as 0.03, just as in the random effects model. 
+I chose the same correlation structures as above (exchangeable and independent), for the same reasons as above. The empirical standard errors of both models are very similar to each other, which is not surprising because they are estimated from the actual data, which makes GEE robust to misspecification of the correlation structure. The correlation $\rho$ of observations within clusters of the exchangeable model is estimated as 0.03, just as in the random effects model. 
 GEE estimates the same ORs as the random effect models above, regardless of correlation structure provided. However, the interpretation of the odds ratios differs according to the models fit: the object of inference of GEE is not the individual cluster, but the population, so the ORs apply to the total population of voters, not to individual areas. 
 
 
